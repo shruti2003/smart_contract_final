@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { ethers } from "ethers";
-import './App.css'; 
+import './App.css'; // Import custom CSS
 
 
 function App() {
@@ -8,33 +8,36 @@ function App() {
     const [response, setResponse] = useState("");
     const [apy, setApy] = useState(5); // Default APY
     const [tvl, setTvl] = useState(5000); // Default TVL
-    const [loading, setLoading] = useState(false); // Loading state for button
-    const [txHash, setTxHash] = useState(""); // Stores the transaction hash
+    const [loading, setLoading] = useState(false); 
+    const [txHash, setTxHash] = useState(""); 
 
-    // Hardcoded customer receiving rewards
-    const customerAddress = "0x1422CF65ee6918eADF2C43a0835e155faed7d707"; 
-    const provider = new ethers.JsonRpcProvider("https://eth-sepolia.g.alchemy.com/v2/ty7tEtuPQNYCUEzZS09lxVqfcPpmBP7j");
+    const customerAddress = process.env.REACT_APP_CUSTOMER_ADDRESS; 
+    const provider = new ethers.JsonRpcProvider(process.env.REACT_APP_ALCHEMY_URL);
 
-    // Private key wallet (Sender: You)
-    const privateKey = "0x70260f0f752d6b509636c9abfea6f680a3f8023ef42086683b968c3760ac119e"; 
+    const privateKey = process.env.REACT_APP_PRIVATE_KEY; 
     const wallet = new ethers.Wallet(privateKey, provider);
     
-    const contractAddress = "0x34cA878703b7d9Ba39679B3FdaC302ed5e2d1F62"; // Update with actual contract address
+    const contractAddress = process.env.REACT_APP_VERIFIER_CONTRACT; 
     const abi = [
-        "function claimReward(address customer, uint256 apy, uint256 tvl) external",
-        "function getBalance(address user) external view returns (uint256)"
+        "function verifyAndClaim(address customer, uint256 apyThreshold, uint256 tvlThreshold) external",
+        "function getCurrentPoolData() external view returns (uint256 tvlInUSD, uint256 apy)"
     ];
 
     const contract = new ethers.Contract(contractAddress, abi, wallet);
+
+    const tokenAddress = process.env.REACT_APP_TOKEN_CONTRACT; 
+    const tokenAbi = [
+        "function getBalance(address user) external view returns (uint256)"
+    ];
+    const tokenContract = new ethers.Contract(tokenAddress, tokenAbi, provider);
 
     useEffect(() => {
         fetchBalance();
     }, []);
 
-    // Fetch the balance of the CUSTOMER (not sender)
     const fetchBalance = async () => {
         try {
-            const balance = await contract.getBalance(customerAddress);
+            const balance = await tokenContract.getBalance(customerAddress);
             setWalletBalance(ethers.formatUnits(balance, 18));
         } catch (error) {
             console.error("Error fetching balance:", error);
@@ -48,27 +51,20 @@ function App() {
             return;
         }
 
-        setLoading(true); // Start loading state
-
+        setLoading(true);
         try {
-            // Send transaction directly to the smart contract
-            const tx = await contract.claimReward(customerAddress, parseFloat(apy), parseFloat(tvl));
+            const tx = await contract.verifyAndClaim(customerAddress, parseFloat(apy), parseFloat(tvl));
             await tx.wait();
 
             setTxHash(tx.hash);
-            setResponse(`✅ Reward Claimed!`);
-
-            // Instantly update balance UI while waiting for confirmation
+            setResponse(`Reward Claimed!`);
             setWalletBalance((prevBalance) => (parseFloat(prevBalance) + 10).toFixed(2));
-
-            // Fetch actual updated balance in the background (to sync with blockchain)
             setTimeout(fetchBalance, 5000);
         } catch (error) {
             console.error("Error:", error);
             setResponse(`${error.reason || "❌ Transaction failed!"}`);
         }
-
-        setLoading(false); // Stop loading state
+        setLoading(false);
     };
 
     return (
